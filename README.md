@@ -150,4 +150,4 @@ python3 path/to/updating-sheet.py
 
 - If these are successful, you will get two messages, one saying "Parsed and sorted CSV has been saved" and another saying "Issues per month sheet and Progress sheet have been updated."
 
-- The script to update the sheets may take some while because I added a delay to avoid hitting API quota limits.
+- The script to update the sheets may take some time because I added a delay to avoid hitting API quota limits.
