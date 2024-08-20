@@ -3,7 +3,17 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
 from dotenv import load_dotenv, dotenv_values
+import string
+
 load_dotenv()
+
+def colnum_string(n):
+    """Convert a column number to an Excel-style column letter."""
+    string = ""
+    while n > 0:
+        n, remainder = divmod(n - 1, 26)
+        string = chr(65 + remainder) + string
+    return string
 
 try:
     # Google Sheets setup
@@ -44,7 +54,7 @@ try:
 
     # Add the remediated column (e.g., "Issues Remediated - Jul24")
     remediated_column = f"Issues Remediated - {previous_month_str}"
-    issues_df.insert(5, remediated_column, 0)  # Insert the remediated column
+    issues_df.insert(5, remediated_column, '')  # Insert the remediated column, initially empty
 
     # Update the "Issues Per Month" sheet with data from the parsed CSV
     for index, row in parsed_df.iterrows():
@@ -72,21 +82,36 @@ try:
 
     # Calculate the remediated issues for the previous month
     if previous_issues_column in issues_df.columns:
-        issues_df[remediated_column] = issues_df[previous_issues_column] - issues_df[new_issues_column]
-        # Ensure no negative values
-        issues_df[remediated_column] = issues_df[remediated_column].apply(lambda x: max(x, 0))
-    else:
-        issues_df[remediated_column] = 0  # Default to 0 if no previous issues column exists
+        for i in range(len(issues_df)):
+            prev_col_letter = colnum_string(issues_df.columns.get_loc(previous_issues_column) + 1)
+            new_col_letter = colnum_string(issues_df.columns.get_loc(new_issues_column) + 1)
+            row_num = i + 2  # Adjust for the header row and 0-based index
+            formula = (
+                f"=IF({prev_col_letter}{row_num}-{new_col_letter}{row_num}<0,"
+                f"0,{prev_col_letter}{row_num}-{new_col_letter}{row_num})"
+            )
+            issues_df.iloc[i, issues_df.columns.get_loc(remediated_column)] = formula
 
     # Remove sites that are no longer in the parsed CSV
     current_sites = parsed_df['Title'].tolist()
     issues_df = issues_df[issues_df['Title'].isin(current_sites)]
 
+    # Sort the DataFrame alphabetically by Title
+    issues_df = issues_df.sort_values(by='Title')
+
     # Replace NaN with 0 or an appropriate value
     issues_df = issues_df.fillna(0)
 
+    # Add a total row
+    total_row = ['Total', '', '', '']  # Start with the first four empty cells
+    for col in issues_df.columns[4:]:
+        col_letter = colnum_string(issues_df.columns.get_loc(col) + 1)
+        total_row.append(f'=SUM({col_letter}2:{col_letter}{len(issues_df) + 1})')  # Create a formula for each column
+
+    issues_df.loc[len(issues_df)] = total_row
+
     # Write the updated DataFrame back to the "Issues Per Month" Google Sheet
-    issues_per_month_sheet.update([issues_df.columns.values.tolist()] + issues_df.values.tolist())
+    issues_per_month_sheet.update([issues_df.columns.values.tolist()] + issues_df.values.tolist(), value_input_option='USER_ENTERED')
 
     # Open the Google Sheets file for the "Initial Crawl" sheet
     initial_crawl_spreadsheet = client.open_by_key(INITIAL_CRAWL_SHEET_ID)
@@ -104,7 +129,7 @@ try:
     initial_crawl_df = initial_crawl_df.fillna(0)
 
     # Write the updated DataFrame back to the "Initial Crawl" Google Sheet
-    initial_crawl_sheet.update([initial_crawl_df.columns.values.tolist()] + initial_crawl_df.values.tolist())
+    initial_crawl_sheet.update([initial_crawl_df.columns.values.tolist()] + initial_crawl_df.values.tolist(), value_input_option='USER_ENTERED')
 
     print("Reporting sheet and Initial Crawl sheet have been updated.")
 except gspread.exceptions.APIError as e:

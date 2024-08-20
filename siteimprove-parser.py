@@ -9,7 +9,10 @@ df = pd.read_csv(input_csv, encoding='utf-16', skiprows=3, delimiter='\t', names
 # Select only the necessary columns
 df = df[['Title', 'URL', 'Tags', 'Date added', 'Accessibility score', 'Issues']]
 
-# Convert 'Date added' to datetime
+# Remove rows where 'Date added' is not a valid date string (i.e., it's the header row or corrupted)
+df = df[df['Date added'] != 'Date added']
+
+# Convert 'Date added' to datetime, handling any parsing errors by setting invalid entries to NaT
 df['Date added'] = df['Date added'].apply(lambda x: parser.parse(str(x)) if pd.notnull(x) else pd.NaT)
 
 # Ensure the 'Accessibility score' is numeric
