@@ -1,17 +1,16 @@
 import pandas as pd
 from dateutil import parser
 
-# Load the Siteimprove CSV with UTF-16 encoding, skipping the first three rows
+# Load the Siteimprove CSV, specifying the correct columns to load
 input_csv = "siteimprove-sheets/siteimprove_export.csv"
-col_names = ['Title', 'URL', 'Tags', 'Date added', 'Accessibility score', 'Issues']
+col_names = ['Title', 'URL', 'Tags', 'Date added', 'Accessibility score', 'Site target', 'Points to target', 'Pages', 'Issues', 'Potential issues', 'PDFs with issues']
 df = pd.read_csv(input_csv, encoding='utf-16', skiprows=3, delimiter='\t', names=col_names)
 
-# Convert all values in 'Date added' to string to ensure compatibility with .str methods
-df['Date added'] = df['Date added'].astype(str)
+# Select only the necessary columns
+df = df[['Title', 'URL', 'Tags', 'Date added', 'Accessibility score', 'Issues']]
 
-# Clean up date strings by stripping whitespace and normalizing spaces
-df['Date added'] = df['Date added'].str.strip()
-df['Date added'] = df['Date added'].str.replace(r'\s+', ' ', regex=True)
+# Convert 'Date added' to string and strip any leading/trailing whitespace
+df['Date added'] = df['Date added'].astype(str).str.strip()
 
 # Manually parse the dates using dateutil.parser.parse
 def parse_date(date_str):
@@ -24,7 +23,7 @@ df['Date added'] = df['Date added'].apply(parse_date)
 
 # Identify rows where the conversion failed
 invalid_dates = df[df['Date added'].isna()]
-print("Rows with invalid date format after coercion:")
+print("Rows with invalid date format after parsing:")
 print(invalid_dates)
 
 # Drop rows where date conversion failed
@@ -41,5 +40,7 @@ filtered_df = filtered_df.sort_values(by=['Date added', 'Title'], ascending=[Fal
 output_csv = "siteimprove-sheets/parsed_siteimprove_export.csv"
 filtered_df.to_csv(output_csv, index=False)
 
-print(df['Date added'].dtype)
-print(df['Date added'].head(10))  # Check the first 10 entries
+# Print the type and some samples of successful date conversions
+print("Date added column data type:", df['Date added'].dtype)
+print("Sample of parsed Date added column:")
+print(df['Date added'].head(10))
