@@ -53,6 +53,7 @@ Before running the script, ensure you have the following installed:
 - `gspread`
 - `oauth2client`
 - `python-dateutil`
+- `python-dotenv`
 - `pyinstaller` (optional for creating an executable)
 
 You can install these libraries using the following command:
