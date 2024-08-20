@@ -1,5 +1,8 @@
 #Google Cloud Service Account
-'siteimprove-sheets/service-account.json'
+siteimprove-sheets/service-account.json
+
+#Parsed sheet from Siteimprove
+siteimprove-sheets/parsed_siteimprove_export.csv
 
 # OS generated files
 .DS_Store

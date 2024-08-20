@@ -1,18 +1,26 @@
 # SiteImprove Data Automation
-===========================
 
-This repository contains a Python script to automate the monthly process of extracting data from SiteImprove CSV files and updating Google Sheets. The automation streamlines the reporting process, reduces manual work, and ensures consistency in data updates.
+Overview
+--------
+
+This project aims to automate the process of updating Google Sheets with data extracted from Siteimprove reports. The automation script parses the Siteimprove CSV export, updates specific sheets with the relevant data, and ensures that the data is organized and formatted correctly for reporting purposes.
+
 
 Table of Contents
 -----------------
 
--   [Features](#features)
--   [Prerequisites](#prerequisites)
--   [Installation](#installation)
--   [Usage](#usage)
--   [Options](#options)
--   [Contributing](#contributing)
--   [License](#license)
+  [Overview](#overview)
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+  - [Required Python Libraries](#required-python-libraries)
+- [Service Account Setup](#service-account-setup)
+- [Scripts](#scripts)
+  - [`siteimprove-parser.py`](#siteimprove-parserpy)
+  - [`updating-sheet.py`](#updating-sheetpy)
+- [Environment Variables](#environment-variables)
+- [Troubleshooting](#troubleshooting)
+- [Next Steps](#next-steps)
+- [Running the code](#running-the-code)
 
 Features
 --------
@@ -29,100 +37,116 @@ Before running the script, ensure you have the following installed:
 
 -   Python 3.x
 -   `pip` (Python package installer)
--   Google Cloud Service Account with access to Google Sheets API
--   Access to the Google Sheets you want to update
 
 ### Required Python Libraries
 
--   `google-auth`
--   `google-auth-oauthlib`
--   `google-auth-httplib2`
--   `google-api-python-client`
--   `pandas`
--   `pyinstaller` (optional for creating an executable)
+- `google_api_python_client`
+- `pandas`
+- `protobuf`
+- `google-api-core`
+- `google-api-python-client`
+- `google-auth`
+- `google-auth-httplib2`
+- `google-auth-oauthlib`
+- `googleapis-common-protos`
+- `httplib2`
+- `gspread`
+- `oauth2client`
+- `python-dateutil`
+- `pyinstaller` (optional for creating an executable)
 
 You can install these libraries using the following command:
 
-bash
+`pip install -r /path/to/requirements.txt`
 
-Copy code
+Service Account Setup
+---------------------
 
-`pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client pandas pyinstaller`
+To use the Google Sheets API, you must set up a Google Cloud service account:
 
-Installation
-------------
+1. Go to the Google Cloud Console and create a new project.
+2. Navigate to "APIs & Services" > "Credentials" and create a new service account.
+3. Download the `service-account.json` file and place it in the `siteimprove-sheets` directory.
 
-1.  **Clone the Repository**:
-
-    bash
-
-    Copy code
-
-    `git clone https://github.com/your-username/siteimprove-automation.git
-    cd siteimprove-automation`
-
-2.  **Set Up Google Sheets API**:
-
-    -   Go to the Google Cloud Console.
-    -   Enable the **Google Sheets API** for your project.
-    -   Create a Service Account and download the JSON credentials file.
-    -   Share the Google Sheet with the Service Account email.
-3.  **Configure the Script**:
-
-    -   Place your Google Sheets API credentials JSON file in the project directory.
-    -   Update the script with your Google Sheet ID and any specific ranges you wish to modify.
-
-Usage
------
-
-### Running the Script
-
-You can run the script directly with Python:
-
-bash
-
-Copy code
-
-`python siteimprove_automation.py`
-
-### Creating an Executable
-
-To create an executable, use PyInstaller:
-
-bash
-
-Copy code
-
-`pyinstaller --onefile siteimprove_automation.py`
-
-### Scheduling the Script
-
-You can schedule the script to run automatically:
-
--   **Windows**: Use Task Scheduler.
--   **macOS/Linux**: Use a cron job.
-
-### Web Interface (Optional)
-
-You can also set up a simple web interface using Flask to allow for file uploads and script execution.
-
-Options
+Scripts
 -------
 
--   **Executable File**: Convert the script into an executable for easy distribution.
--   **Scheduled Task**: Schedule the script to run at specific intervals.
--   **Web Interface**: Set up a Flask-based web interface for file uploads and updates.
+### `siteimprove-parser.py`
 
-Contributing
-------------
+This script processes the raw Siteimprove CSV export by:
 
-Contributions are welcome! Please fork this repository and submit a pull request with your changes.
+- Selecting only the necessary columns: `Title`, `URL`, `Tags`, `Date added`, `Accessibility score`, and `Issues`.
+- Converting the 'Date added' column to a valid datetime format.
+- Sorting the data alphabetically by `Title`.
+- Saving the cleaned and sorted data to `parsed_siteimprove_export.csv`.
 
-License
--------
+### `updating-sheet.py`
 
-This project is licensed under the MIT License. See the `LICENSE` file for more details.
+This script automates the update process for Google Sheets by:
 
-* * * * *
+- Inserting new data into the "Issues per month" sheet with the current month's data.
+- Calculating the remediated issues by comparing the current and previous month's data.
+- Adding a total row to the sheet.
+- Updating the "Progress" sheet with the latest sites reviewed, issues remediated to date, and issues remaining.
+- Ensuring formulas in the Progress sheet correctly reference the updated totals.
 
-Replace `"your-username"` in the repository URL with your actual GitHub username. This README should give users a comprehensive overview of your project and instructions on how to set it up and use it. Let me know if you need any additional customization!
+Environment Variables
+---------------------
+
+Ensure that the `.env` file is correctly set up with the following variables:
+
+```
+REPORTING_SHEET_ID="your-reporting-sheet-id"
+INITIAL_CRAWL_SHEET_ID="your-initial-crawl-sheet-id"
+```
+
+Troubleshooting
+---------------
+
+- **Issue**: "API quota exceeded" error.
+  - **Solution**: Increase the delay between API calls in the script, or reduce the frequency of script execution.
+- **Issue**: "Module not found" error when running the script.
+  - **Solution**: Ensure all dependencies are installed by running `pip install -r requirements.txt`.
+
+Next Steps
+----------
+
+1. **Enhancements:**
+
+    - Generate a unique name for the parsed file each time it is created.
+    - Add the parsed file to `.gitignore` to prevent it from being committed.
+2. **Service Account:**
+
+    - Transition from using personal Google Cloud credentials to CDA's Google Cloud credentials.
+3. **Dependencies:**
+
+    - Review and update `requirements.txt` to ensure all necessary Python packages are included.
+4. **Sheet IDs:**
+
+    - Replace the test Google Sheets IDs with the actual IDs.
+    - Share the updated sheet IDs with Jack and Thalia.
+5. **Reports & Graphs:**
+
+    - Update the graph and its headers within the reporting sheet.
+    - Update the Scores by tier in the relevant sheet.
+6. **Packaging:**
+
+    - Package the entire application for easy deployment and sharing with the team.
+
+Running the code
+----------
+
+- I am working with test sheets in `Student worker created` -> `Siteimprove reporting test sheet` and `Test Initial Crawl a11y scores`
+- In the `Issues per month` sheet, delete column E and F
+- In the `Progress` sheet, delete row 2
+
+- Run:
+
+```
+python path/to/siteimprove-parser.py
+python3 path/to/updating-sheet.py
+```
+
+- If these are successful, you will get two messages, one saying "Parsed and sorted CSV has been saved" and another saying "Issues per month sheet and Progress sheet have been updated."
+
+- The script to update the sheets may take some while because I added a delay to avoid hitting API quota limits.
