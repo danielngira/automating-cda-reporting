@@ -2,8 +2,9 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
-from dotenv import load_dotenv, dotenv_values
+from dotenv import load_dotenv
 import string
+import time
 
 load_dotenv()
 
@@ -24,18 +25,18 @@ try:
 
     # Google Sheets IDs and Range
     REPORTING_SHEET_ID = os.getenv("REPORTING_SHEET_ID")
-    INITIAL_CRAWL_SHEET_ID = os.getenv("INITIAL_CRAWL_SHEET_ID")
 
     ISSUES_PER_MONTH_SHEET = 'Issues per month'
-    INITIAL_CRAWL_SHEET = 'Initial scores'
+    PROGRESS_SHEET = 'Progress'
 
     # Load the parsed CSV file
     parsed_csv = "siteimprove-sheets/parsed_siteimprove_export.csv"
     parsed_df = pd.read_csv(parsed_csv)
 
-    # Open the Google Sheets file for the reporting sheet and access the necessary sheet
+    # Open the Google Sheets file for the reporting sheet and access the necessary sheets
     reporting_spreadsheet = client.open_by_key(REPORTING_SHEET_ID)
     issues_per_month_sheet = reporting_spreadsheet.worksheet(ISSUES_PER_MONTH_SHEET)
+    progress_sheet = reporting_spreadsheet.worksheet(PROGRESS_SHEET)
 
     # Convert the "Issues Per Month" sheet to a DataFrame
     issues_data = issues_per_month_sheet.get_all_values()
@@ -113,25 +114,46 @@ try:
     # Write the updated DataFrame back to the "Issues Per Month" Google Sheet
     issues_per_month_sheet.update([issues_df.columns.values.tolist()] + issues_df.values.tolist(), value_input_option='USER_ENTERED')
 
-    # Open the Google Sheets file for the "Initial Crawl" sheet
-    initial_crawl_spreadsheet = client.open_by_key(INITIAL_CRAWL_SHEET_ID)
-    initial_crawl_sheet = initial_crawl_spreadsheet.worksheet(INITIAL_CRAWL_SHEET)
+    # Delay to avoid hitting the API quota
+    time.sleep(20)  # Increased sleep to prevent API quota issues
 
-    # Convert the "Initial Crawl" sheet to a DataFrame
-    initial_crawl_data = initial_crawl_sheet.get_all_values()
-    initial_crawl_columns = initial_crawl_data[0]
-    initial_crawl_df = pd.DataFrame(initial_crawl_data[1:], columns=initial_crawl_columns)
+    # Refresh the "Issues Per Month" data after update
+    issues_data = issues_per_month_sheet.get_all_values()
+    issues_columns = issues_data[0]
+    issues_df = pd.DataFrame(issues_data[1:], columns=issues_columns)
 
-    # Remove sites that are no longer in the parsed CSV from the "Initial Crawl" sheet
-    initial_crawl_df = initial_crawl_df[initial_crawl_df['Site'].isin(current_sites)]
+    # Calculate the total row number again after updating
+    total_row_number = len(issues_df) + 1
 
-    # Replace NaN with 0 or an appropriate value
-    initial_crawl_df = initial_crawl_df.fillna(0)
+    # Now update the Progress sheet after updating Issues per month sheet
+    progress_data = progress_sheet.get_all_values()
+    next_month = (pd.to_datetime(progress_data[1][0]) + pd.DateOffset(months=1)).strftime('%m/1/%y')
 
-    # Write the updated DataFrame back to the "Initial Crawl" Google Sheet
-    initial_crawl_sheet.update([initial_crawl_df.columns.values.tolist()] + initial_crawl_df.values.tolist(), value_input_option='USER_ENTERED')
+    # Calculate Sites Reviewed
+    total_sites_reviewed = len(issues_df) - 1  # Exclude the Total row itself
 
-    print("Reporting sheet and Initial Crawl sheet have been updated.")
+    # Insert a new row at the top of the "Progress" sheet
+    new_row = [
+        next_month,  # New date
+        total_sites_reviewed,  # Sites reviewed
+        "",  # Issues remediated to date (will be updated below)
+        ""   # Issues remaining (will be updated below)
+    ]
+
+    # Insert the new row at the top
+    progress_sheet.insert_row(new_row, index=2)
+
+    # Correct formulas in the "Issues remediated to date" and "Issues remaining" columns
+    for i in range(2, len(progress_data) + 2):  # Adjust for new row at top
+        remediated_col_letter = colnum_string(6 + (i - 2) * 2)  # F starts at column 6
+        issues_col_letter = colnum_string(5 + (i - 2) * 2)      # E starts at column 5
+
+        # Adjust the formulas to use the correct row number (total_row_number)
+        progress_sheet.update_cell(i, 3, f"=C{i+1}+'Issues per month'!{remediated_col_letter}{total_row_number}")
+        progress_sheet.update_cell(i, 4, f"='Issues per month'!{issues_col_letter}{total_row_number}")
+        time.sleep(2)  # Increased sleep to avoid API quota issues
+
+    print("Issues per month sheet and Progress sheet have been updated.")
 except gspread.exceptions.APIError as e:
     print(f"An error occurred with the Google Sheets API: {e}")
 except Exception as e:
