@@ -127,6 +127,10 @@ try:
         col_letter = colnum_string(issues_df.columns.get_loc(col) + 1)
         total_row.append(f'=SUM({col_letter}2:{col_letter}{len(issues_df) + 1})')  # Create a formula for each column
 
+    # Convert columns with formulas to strings
+    total_row = [str(item) if isinstance(item, str) else item for item in total_row]
+
+    # Add the total row to the DataFrame
     issues_df.loc[len(issues_df)] = total_row
 
     # Write the updated DataFrame back to the "Issues Per Month" Google Sheet
