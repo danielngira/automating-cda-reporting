@@ -6,8 +6,10 @@ from dotenv import load_dotenv
 import string
 import time
 
+# Load environment variables from .env file
 load_dotenv()
 
+# Convert column number to Excel-style column letter
 def colnum_string(n):
     """Convert a column number to an Excel-style column letter."""
     string = ""
@@ -25,7 +27,6 @@ try:
 
     # Google Sheets IDs and Range
     REPORTING_SHEET_ID = os.getenv("REPORTING_SHEET_ID")
-
     ISSUES_PER_MONTH_SHEET = 'Issues per month'
     PROGRESS_SHEET = 'Progress'
     TIER_SHEETS = {
@@ -33,23 +34,6 @@ try:
         'Tier 2': 'Tier 2 scores',
         'Tier 3': 'Tier 3 scores'
     }
-
-    # Function to categorize tiers based on the first tag
-    def categorize_tier(tags):
-        tier = tags.split(',')[0].strip()  # Extract the first tag and remove any leading/trailing spaces
-        if tier == '1':
-            return 'Tier 1'
-        elif tier == '2':
-            return 'Tier 2'
-        else:
-            return 'Tier 3'
-    
-    # Load the parsed CSV file
-    parsed_csv = "siteimprove-sheets/parsed_siteimprove_export.csv"
-    parsed_df = pd.read_csv(parsed_csv)
-
-    # Categorize the sites into tiers
-    parsed_df['Tier'] = parsed_df['Tags'].apply(categorize_tier)
 
     # Open the Google Sheets file for the reporting sheet and access the necessary sheets
     reporting_spreadsheet = client.open_by_key(REPORTING_SHEET_ID)
@@ -61,21 +45,19 @@ try:
     issues_columns = issues_data[0]
     issues_df = pd.DataFrame(issues_data[1:], columns=issues_columns)
 
-    # Add the new month column (e.g., "Issues - Aug24")
+    # Add the new month column (e.g., "Issues - Sep24")
     current_month = pd.to_datetime('today').strftime('%b%y')
     new_issues_column = f"Issues - {current_month}"
     issues_df.insert(4, new_issues_column, 0)  # Insert the new column at the correct position
 
-    # Calculate the previous month string and column name
-    previous_month = pd.to_datetime('today') - pd.DateOffset(months=1)
-    previous_month_str = previous_month.strftime('%b%y')
-    previous_issues_column = f"Issues - {previous_month_str}"
-
-    # Add the remediated column (e.g., "Issues Remediated - Jul24")
-    remediated_column = f"Issues Remediated - {previous_month_str}"
+    # Add the remediated column
+    remediated_column = "Issues Remediated"
     issues_df.insert(5, remediated_column, '')  # Insert the remediated column, initially empty
 
     # Update the "Issues Per Month" sheet with data from the parsed CSV
+    parsed_csv = "siteimprove-sheets/parsed_siteimprove_export.csv"
+    parsed_df = pd.read_csv(parsed_csv)
+
     for index, row in parsed_df.iterrows():
         site_title = row['Title']
         issues_count = row['Issues']
@@ -96,20 +78,12 @@ try:
 
     # Ensure columns are numeric before performing calculations
     issues_df[new_issues_column] = pd.to_numeric(issues_df[new_issues_column], errors='coerce').fillna(0)
-    if previous_issues_column in issues_df.columns:
-        issues_df[previous_issues_column] = pd.to_numeric(issues_df[previous_issues_column], errors='coerce').fillna(0)
 
-    # Calculate the remediated issues for the previous month
-    if previous_issues_column in issues_df.columns:
-        for i in range(len(issues_df)):
-            prev_col_letter = colnum_string(issues_df.columns.get_loc(previous_issues_column) + 1)
-            new_col_letter = colnum_string(issues_df.columns.get_loc(new_issues_column) + 1)
-            row_num = i + 2  # Adjust for the header row and 0-based index
-            formula = (
-                f"=IF({prev_col_letter}{row_num}-{new_col_letter}{row_num}<0,"
-                f"0,{prev_col_letter}{row_num}-{new_col_letter}{row_num})"
-            )
-            issues_df.iloc[i, issues_df.columns.get_loc(remediated_column)] = formula
+    # Insert the formula for remediated issues (column F) for each row
+    for i in range(len(issues_df)):
+        row_num = i + 2  # Adjust for the header row
+        formula = f"=IF(G{row_num}-E{row_num}<0,0,G{row_num}-E{row_num})"
+        issues_df.iloc[i, issues_df.columns.get_loc(remediated_column)] = formula
 
     # Remove sites that are no longer in the parsed CSV
     current_sites = parsed_df['Title'].tolist()
@@ -121,31 +95,27 @@ try:
     # Replace NaN with 0 or an appropriate value
     issues_df = issues_df.fillna(0)
 
-    # Add a total row
+    # Add a total row at the bottom of the DataFrame after the last row of data
     total_row = ['Total', '', '', '']  # Start with the first four empty cells
     for col in issues_df.columns[4:]:
         col_letter = colnum_string(issues_df.columns.get_loc(col) + 1)
-        total_row.append(f'=SUM({col_letter}2:{col_letter}{len(issues_df) + 1})')  # Create a formula for each column
+        total_row.append(f'=SUM({col_letter}2:{col_letter}{len(issues_df) + 1})')  # Adjust for the length of the actual data
 
     # Convert columns with formulas to strings
     total_row = [str(item) if isinstance(item, str) else item for item in total_row]
 
-    # Add the total row to the DataFrame
-    issues_df.loc[len(issues_df)] = total_row
+    # Add the total row to the DataFrame using pd.concat()
+    total_row_df = pd.DataFrame([total_row], columns=issues_df.columns)
+    issues_df = pd.concat([issues_df, total_row_df], ignore_index=True)
+
+    # Calculate total row number
+    total_row_number = len(issues_df)  # Total row will be at the last row of the DataFrame
 
     # Write the updated DataFrame back to the "Issues Per Month" Google Sheet
     issues_per_month_sheet.update([issues_df.columns.values.tolist()] + issues_df.values.tolist(), value_input_option='USER_ENTERED')
 
     # Delay to avoid hitting the API quota
     time.sleep(20)  # Increased sleep to prevent API quota issues
-
-    # Refresh the "Issues Per Month" data after update
-    issues_data = issues_per_month_sheet.get_all_values()
-    issues_columns = issues_data[0]
-    issues_df = pd.DataFrame(issues_data[1:], columns=issues_columns)
-
-    # Calculate the total row number again after updating
-    total_row_number = len(issues_df) + 1
 
     # Now update the Progress sheet after updating Issues per month sheet
     progress_data = progress_sheet.get_all_values()
@@ -171,13 +141,11 @@ try:
         issues_col_letter = colnum_string(5 + (i - 2) * 2)      # E starts at column 5
 
         # Adjust the formulas to use the correct row number (total_row_number)
-        progress_sheet.update_cell(i, 3, f"=C{i+1}+'Issues per month'!{remediated_col_letter}{total_row_number}")
-        progress_sheet.update_cell(i, 4, f"='Issues per month'!{issues_col_letter}{total_row_number}")
+        progress_sheet.update_cell(i, 3, f"=C{i+1}+'Issues per month'!{remediated_col_letter}{total_row_number + 1}")
+        progress_sheet.update_cell(i, 4, f"='Issues per month'!{issues_col_letter}{total_row_number + 1}")
         time.sleep(2)  # Increased sleep to avoid API quota issues
 
-    # The logic to update the Tier sheets and the Scores by Tier sheet
-
-    # Update each tier sheet with the corresponding data
+    # Update the Tier sheets and the Scores by Tier sheet
     for tier, sheet_name in TIER_SHEETS.items():
         sheet = reporting_spreadsheet.worksheet(sheet_name)
 
@@ -191,7 +159,11 @@ try:
         sheet.update([['Name', 'URL', 'Accessibility score']] + tier_data, value_input_option='USER_ENTERED')
 
     print("Issues per month sheet, Progress sheet, Tier sheets, and Scores by Tier graph have been updated.")
+
 except gspread.exceptions.APIError as e:
     print(f"An error occurred with the Google Sheets API: {e}")
 except Exception as e:
     print(f"An unexpected error occurred: {e}")
+
+
+# Fix issues remediated 
