@@ -56,8 +56,10 @@ Before running the script, ensure you have the following installed:
 - `python-dotenv`
 - `pyinstaller` (optional for creating an executable)
 
-You can install these libraries using the following command:
+You can get set-up by installing a virtual environment and isntalling the requirements by running:
 
+`python3 -m venv venv`
+`source venv/bin/activate`
 `pip install -r /path/to/requirements.txt`
 
 Service Account Setup
