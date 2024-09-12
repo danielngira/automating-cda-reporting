@@ -45,23 +45,46 @@ try:
     issues_columns = issues_data[0]
     issues_df = pd.DataFrame(issues_data[1:], columns=issues_columns)
 
+    # Insert two new columns at positions E and F, shifting existing columns to the right
+    issues_per_month_sheet.insert_cols([[], []], col=5)  # Insert at E and F
+
+    # Convert numerical columns to native Python types to avoid JSON serialization issues
+    for col in issues_df.columns[1:]:
+        try:
+            issues_df[col] = pd.to_numeric(issues_df[col])  # Convert to numeric types where applicable
+        except (ValueError, TypeError):
+            pass  # If conversion fails, leave the column as is
+    
     # Add the new month column (e.g., "Issues - Sep24")
     current_month = pd.to_datetime('today').strftime('%b%y')
     new_issues_column = f"Issues - {current_month}"
-    issues_df.insert(4, new_issues_column, 0)  # Insert the new column at the correct position
+    remediated_column = f"Issues Remediated - {current_month}"
 
-    # Add the remediated column
-    remediated_column = "Issues Remediated"
-    issues_df.insert(5, remediated_column, '')  # Insert the remediated column, initially empty
+    # Insert new columns at positions E and F, shifting existing columns to the right
+    issues_df.insert(4, new_issues_column, 0)  # Insert the new column at the correct position
+    issues_df.insert(5, remediated_column, 0)  # Insert the remediated column, initialize with 0
+
+    # Ensure no NaN values
+    issues_df.fillna("", inplace=True)  # Replace NaN with empty strings
+    issues_df[new_issues_column] = pd.to_numeric(issues_df[new_issues_column], errors='coerce').fillna(0)
 
     # Update the "Issues Per Month" sheet with data from the parsed CSV
     parsed_csv = "siteimprove-sheets/parsed_siteimprove_export.csv"
     parsed_df = pd.read_csv(parsed_csv)
 
+    # Validation: Check the number of sites in the CSV
+    total_sites_csv = parsed_df.shape[0]
+    print(f"Total sites in CSV: {total_sites_csv}")
+
+    # Ensure 'Title' is not NaN for any row in the CSV
+    parsed_df = parsed_df.dropna(subset=['Title'])
+
+    # Iterate over parsed CSV and update/add entries in the DataFrame
     for index, row in parsed_df.iterrows():
         site_title = row['Title']
         issues_count = row['Issues']
 
+        # Add or update the site in the DataFrame
         if site_title in issues_df['Title'].values:
             # Update existing site
             issues_df.loc[issues_df['Title'] == site_title, new_issues_column] = issues_count
@@ -79,40 +102,49 @@ try:
     # Ensure columns are numeric before performing calculations
     issues_df[new_issues_column] = pd.to_numeric(issues_df[new_issues_column], errors='coerce').fillna(0)
 
-    # Insert the formula for remediated issues (column F) for each row
+    # Ensure no missing sites between CSV and the updated sheet
+    total_sites_updated = len(issues_df['Title'].unique())  # Count unique Titles after update
+    if total_sites_csv != total_sites_updated:
+        print(f"Warning: CSV has {total_sites_csv} sites, but only {total_sites_updated} were updated in the sheet.")
+    else:
+        print(f"Success: All {total_sites_csv} sites have been updated in the sheet.")
+
+    # Write entire DataFrame back to Google Sheets (including any newly added sites)
+    issues_per_month_sheet.update([issues_df.columns.values.tolist()] + issues_df.values.tolist(), value_input_option='USER_ENTERED')
+
+    # Prepare updates for columns E and F (new issues and remediated issues)
+    updates = []
     for i in range(len(issues_df)):
         row_num = i + 2  # Adjust for the header row
+        # Update new issues column (E)
+        updates.append({
+            'range': f'E{row_num}',
+            'values': [[float(issues_df.iloc[i, 4])]]  # Column E is the 5th column in the DataFrame
+        })
+        # Update remediated issues column (F)
         formula = f"=IF(G{row_num}-E{row_num}<0,0,G{row_num}-E{row_num})"
-        issues_df.iloc[i, issues_df.columns.get_loc(remediated_column)] = formula
+        updates.append({
+            'range': f'F{row_num}',
+            'values': [[formula]]
+        })
 
-    # Remove sites that are no longer in the parsed CSV
-    current_sites = parsed_df['Title'].tolist()
-    issues_df = issues_df[issues_df['Title'].isin(current_sites)]
+    # Send the batch update to Google Sheets
+    issues_per_month_sheet.batch_update(
+    [{'range': u['range'], 'values': u['values']} for u in updates],
+    value_input_option='USER_ENTERED'
+    )
 
-    # Sort the DataFrame alphabetically by Title
-    issues_df = issues_df.sort_values(by='Title')
-
-    # Replace NaN with 0 or an appropriate value
-    issues_df = issues_df.fillna(0)
-
-    # Add a total row at the bottom of the DataFrame after the last row of data
+    # Add the total row only to columns E and F without overwriting other columns
     total_row = ['Total', '', '', '']  # Start with the first four empty cells
-    for col in issues_df.columns[4:]:
+    for col in issues_df.columns[4:6]:  # Only update columns E and F
         col_letter = colnum_string(issues_df.columns.get_loc(col) + 1)
-        total_row.append(f'=SUM({col_letter}2:{col_letter}{len(issues_df) + 1})')  # Adjust for the length of the actual data
+        total_row.append(f'=SUM({col_letter}2:{col_letter}{len(issues_df) + 1})')
 
-    # Convert columns with formulas to strings
-    total_row = [str(item) if isinstance(item, str) else item for item in total_row]
-
-    # Add the total row to the DataFrame using pd.concat()
-    total_row_df = pd.DataFrame([total_row], columns=issues_df.columns)
-    issues_df = pd.concat([issues_df, total_row_df], ignore_index=True)
-
-    # Calculate total row number
-    total_row_number = len(issues_df)  # Total row will be at the last row of the DataFrame
-
-    # Write the updated DataFrame back to the "Issues Per Month" Google Sheet
-    issues_per_month_sheet.update([issues_df.columns.values.tolist()] + issues_df.values.tolist(), value_input_option='USER_ENTERED')
+    # Add the total row to columns E and F using batch update
+    issues_per_month_sheet.batch_update([
+        {'range': f'E{len(issues_df) + 2}', 'values': [[total_row[4]]]},
+        {'range': f'F{len(issues_df) + 2}', 'values': [[total_row[5]]]}
+    ], value_input_option='USER_ENTERED')
 
     # Delay to avoid hitting the API quota
     time.sleep(20)  # Increased sleep to prevent API quota issues
@@ -135,6 +167,9 @@ try:
     # Insert the new row at the top
     progress_sheet.insert_row(new_row, index=2)
 
+    # Ensure total_row_number is correctly set after adding the total row
+    total_row_number = len(issues_df)
+
     # Correct formulas in the "Issues remediated to date" and "Issues remaining" columns
     for i in range(2, len(progress_data) + 2):  # Adjust for new row at top
         remediated_col_letter = colnum_string(6 + (i - 2) * 2)  # F starts at column 6
@@ -145,12 +180,20 @@ try:
         progress_sheet.update_cell(i, 4, f"='Issues per month'!{issues_col_letter}{total_row_number + 1}")
         time.sleep(2)  # Increased sleep to avoid API quota issues
 
+    # Extract the first value from 'Tags' to determine the tier
+    parsed_df['Tier'] = parsed_df['Tags'].apply(lambda x: x.split(',')[0].strip())
+
     # Update the Tier sheets and the Scores by Tier sheet
     for tier, sheet_name in TIER_SHEETS.items():
         sheet = reporting_spreadsheet.worksheet(sheet_name)
 
         # Filter the parsed data for the current tier
-        tier_df = parsed_df[parsed_df['Tier'] == tier]
+        tier_df = parsed_df[parsed_df['Tier'] == tier.split()[-1]]
+
+        # Check if there are any entries for the tier
+        if tier_df.empty:
+            print(f"No data found for {tier}")
+            continue
 
         # Prepare data for updating
         tier_data = tier_df[['Title', 'URL', 'Accessibility score']].values.tolist()
@@ -164,6 +207,3 @@ except gspread.exceptions.APIError as e:
     print(f"An error occurred with the Google Sheets API: {e}")
 except Exception as e:
     print(f"An unexpected error occurred: {e}")
-
-
-# Fix issues remediated 
